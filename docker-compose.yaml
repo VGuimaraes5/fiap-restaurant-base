@@ -1,0 +1,119 @@
+version: "3.4"
+
+services:
+  pedidos:
+    image: ${DOCKER_REGISTRY-}restaurant-pedidos
+    container_name: pedidos
+    build:
+      context: Pedido
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PEDIDO_PORT}:5001"
+    environment:
+      ASPNETCORE_URLS: http://*:${APP_PEDIDO_PORT}
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__ConnectionString: server=mysqldatabase;port=${MYSQL_PORT};database=${MYSQL_PEDIDOS_DATABASE};uid=${MYSQL_PEDIDOS_USER};password=${MYSQL_PEDIDOS_PASSWORD}
+    depends_on:
+      mysqldatabase:
+        condition: service_healthy
+    networks:
+      - mysql_network
+      - restaurant_network
+
+  pagamentos:
+    image: ${DOCKER_REGISTRY-}restaurant-pagamentos
+    container_name: pagamentos
+    build:
+      context: Pagamento
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PAGAMENTO_PORT}:5002"
+    environment:
+      ASPNETCORE_URLS: http://*:${APP_PAGAMENTO_PORT}
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__ConnectionString: server=mysqldatabase;port=${MYSQL_PORT};database=${MYSQL_PAGAMENTOS_DATABASE};uid=${MYSQL_PAGAMENTOS_USER};password=${MYSQL_PAGAMENTOS_PASSWORD}
+    depends_on:
+      mysqldatabase:
+        condition: service_healthy
+    networks:
+      - mysql_network
+      - restaurant_network
+
+  producao:
+    image: ${DOCKER_REGISTRY-}restaurant-producao
+    container_name: producao
+    build:
+      context: Producao
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PRODUCAO_PORT}:5003"
+    environment:
+      ASPNETCORE_URLS: http://*:${APP_PRODUCAO_PORT}
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      MONGO_RESTAURANT_DATABASE: ${MONGO_RESTAURANT_DATABASE}
+      MONGO_PRODUCAO_USER: ${MONGO_PRODUCAO_USER}
+      MONGO_PRODUCAO_PASSWORD: ${MONGO_PRODUCAO_PASSWORD}
+      MONGO_PRODUCAO_COLLECTION: ${MONGO_PRODUCAO_COLLECTION}
+    networks:
+      - mongo_network
+      - restaurant_network
+
+  mysqldatabase:
+    image: mysql:8.0.27
+    container_name: mysqldatabase
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "fiap"
+      MYSQL_PEDIDOS_DATABASE: ${MYSQL_PEDIDOS_DATABASE}
+      MYSQL_PEDIDOS_USER: ${MYSQL_PEDIDOS_USER}
+      MYSQL_PEDIDOS_PASSWORD: ${MYSQL_PEDIDOS_PASSWORD}
+      MYSQL_PAGAMENTOS_DATABASE: ${MYSQL_PAGAMENTOS_DATABASE}
+      MYSQL_PAGAMENTOS_USER: ${MYSQL_PAGAMENTOS_USER}
+      MYSQL_PAGAMENTOS_PASSWORD: ${MYSQL_PAGAMENTOS_PASSWORD}
+    ports:
+      - "${MYSQL_PORT}:3306"
+      - "33060:33060"
+    expose:
+      - ${MYSQL_PORT}
+      - 33060
+    volumes:
+      - mysql_volume:/var/lib/mysql
+      - ./database/mysql:/docker-entrypoint-initdb.d/
+    networks:
+      - mysql_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongo:
+    image: mongo:6.0.13
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_RESTAURANT_DATABASE: ${MONGO_RESTAURANT_DATABASE}
+      MONGO_PRODUCAO_USER: ${MONGO_PRODUCAO_USER}
+      MONGO_PRODUCAO_PASSWORD: ${MONGO_PRODUCAO_PASSWORD}
+      MONGO_PRODUCAO_COLLECTION: ${MONGO_PRODUCAO_COLLECTION}
+    ports:
+      - ${MONGO_PORT}:27017
+    volumes:
+      - mongo_volume:/data/db
+      - ./database/mongo/mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
+    networks:
+      - mongo_network
+
+volumes:
+  mysql_volume:
+  mongo_volume:
+
+networks:
+  restaurant_network:
+  mysql_network:
+  mongo_network:
+
