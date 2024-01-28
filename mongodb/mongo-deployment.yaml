@@ -1,0 +1,162 @@
+# apiVersion: v1
+# data:
+#   MONGO_ROOT_USER: root
+#   MONGO_ROOT_PASSWORD: toor
+#   MONGO_PRODUCAO_PASSWORD: producao_password
+#   MONGO_PRODUCAO_USER: producao_user
+# kind: Secret
+# metadata:
+#   creationTimestamp: null
+#   name: mongo-secrets
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: mongo-sc
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv-volume
+  labels:
+    type: local
+    app: mongo
+spec:
+  storageClassName: mongo
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pv-claim
+spec:
+  storageClassName: mongo
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: mongo
+  name: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - image: mongo
+        name: mongo
+        resources:
+          requests:
+            memory: 500Mi
+            cpu: 500m
+          limits:
+            memory: 500Mi
+            cpu: 500m
+        ports:
+        - containerPort: 27017
+          name: "mongo"
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: "root"
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          value: "toor"
+        - name: MONGO_INITDB_ROOT_DATABASE
+          value: "restaurant"
+        - name: MONGO_PRODUCAO_USER
+          value: "producao_user"
+        - name: MONGO_PRODUCAO_PASSWORD
+          value: "producao_password"
+        - name: MONGO_PRODUCAO_COLLECTION
+          value: "producao"
+        - name: MONGO_LOG_LEVEL
+          value: "debug"
+        volumeMounts:
+        - name: "mongo-data-dir"
+          mountPath: "/data/db"
+        - name: init-script-volume
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: "mongo-data-dir"
+        persistentVolumeClaim:
+          claimName: "mongo-pv-claim"
+      - name: init-script-volume
+        configMap:
+          name: mongo-init-script
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mongo-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mongo
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 40
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-svs
+  labels:
+    app: mongo
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 27017
+    targetPort: 27017
+  selector:
+    app: mongo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init-script
+data:
+  mongo-init.sh: |
+    set -e
+
+    /usr/bin/mongosh <<EOF
+    db = db.getSiblingDB('$MONGO_INITDB_ROOT_DATABASE')
+
+    let result = db.createUser({
+      user: '$MONGO_PRODUCAO_USER',
+      pwd: '$MONGO_PRODUCAO_PASSWORD',
+      roles: [{ role: 'readWrite', db: '$MONGO_INITDB_ROOT_DATABASE' }],
+    });
+
+    if (result.ok != 1) {
+      print('Erro ao criar usuario: ' + result.errmsg);
+    } else {
+      print('Usuario criado com sucesso!');
+    }
+
+    db.createCollection('$MONGO_PRODUCAO_COLLECTION')
+
+    EOF

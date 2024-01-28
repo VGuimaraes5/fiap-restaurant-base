@@ -7,6 +7,8 @@ services:
     build:
       context: Pedido
       dockerfile: Dockerfile
+      args:
+        PORT: 5001
     restart: unless-stopped
     ports:
       - "${APP_PEDIDO_PORT}:5001"
@@ -27,6 +29,8 @@ services:
     build:
       context: Pagamento
       dockerfile: Dockerfile
+      args:
+        PORT: 5002
     restart: unless-stopped
     ports:
       - "${APP_PAGAMENTO_PORT}:5002"
@@ -47,6 +51,8 @@ services:
     build:
       context: Producao
       dockerfile: Dockerfile
+      args:
+        PORT: 5003
     restart: unless-stopped
     ports:
       - "${APP_PRODUCAO_PORT}:5003"
